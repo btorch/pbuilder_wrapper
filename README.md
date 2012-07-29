@@ -9,9 +9,11 @@ If you want to add packes to a repo then you also need to have reprepro properly
 
 
 Syntax
+
     pbuilder_wrapper.sh  -d PROJECT [-c CONFIG_FILE] [-r REPO_NAME] [-s GPGKEY]
+
     -r  Name of the repo for reprepro to add the package(s) into 
-        If none supplied than nothing is added [NOT YET IMPLEMENTED]
+        If none supplied than nothing is added (NOT YET IMPLEMENTED)
 
     -c  Location of the pbuilder configuration file (if none provided it will try to find one under /etc/pbuilder/)
 
