@@ -14,7 +14,8 @@
 ##############################
 # INITIALIZING SOME VARIABLE
 ##############################
-
+# Change the variables below as you see fit
+#
 ADD_TO_REPO=0
 PBUILDERRC_FIND=1
 
@@ -22,15 +23,13 @@ PDEBUILD="/usr/bin/pdebuild"
 DPKGSIG="/usr/bin/dpkg-sig"
 REPREPRO="/usr/bin/reprepro"
 
-GPG="/usr/bin/gpg"
-RACKLABS_GPGKEY="2E2AB11B"
-
 GIT="/usr/bin/git"
+GPG="/usr/bin/gpg"
+# Please change this to be your PGP key id 
+GPGKEY="2E2AB11B"
 
-#PBUILDERRC_FILE="/etc/pbuilder/pbuilderrc_lucid-sos-amd64"
 PBUILDERRC_LOCATION="/etc/pbuilder/"
 BUILD_RESULT_BASE="/var/cache/pbuilder/result"
-
 
 # REPO BASES
 REPREPRO_BASEDIR_UNSTABLE="/srv/packages/ubuntu-unstable"
@@ -39,9 +38,9 @@ REPREPRO_BASEDIR_STABLE="/srv/packages/ubuntu"
 
 
 # ARGUMENTS 
-NUMBER_OF_ARGS=$#
-ARG_SARRAY=("$@")
-ARGS=$@
+#NUMBER_OF_ARGS=$#
+#ARG_SARRAY=("$@")
+#ARGS=$@
 
 
 
@@ -56,9 +55,12 @@ cat << USAGE
 
 Syntax
     pbuilder_wrapper.sh  -d PROJECT [-c CONFIG FILE LOCATION] [-r REPO NAME]
-    -r  Name of the repo for reprepro to add the package(s) to (If none supplied than nothing is added) [NOT YET IMPLEMENTED]
+    -r  Name of the repo for reprepro to add the package(s) into (
+        If none supplied than nothing is added [NOT YET IMPLEMENTED]
     -c  Location of the pbuilder configuration file (if none provided it will try to find one under /etc/pbuilder/)
     -d  Name of the directory where the source (aka. your project) is located. (A debian folder must exist within it)
+    -s  Sign the debian packages with the GPG key id provided 
+        If this flag is omitted it will try to sign the packages with the key assigned to the PGPKEY Variable
     -h  For this usage screen  
 
     Info: 
@@ -72,7 +74,7 @@ exit 1
 }
 
 
-while getopts "hrc:d:" opts
+while getopts "hrsc:d:" opts
 do 
     case $opts in 
         r) 
@@ -85,6 +87,17 @@ do
             ;;
         d)
             PROJECT="${OPTARG}"
+            ;;
+        s)
+            GPGKEY_PROVIDED="${OPTARG}"
+            ;;
+       \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument." >&2
+            exit 1
             ;;
         h)
             usage_display
@@ -141,14 +154,44 @@ end_banner (){
     printf "\n\t #                PBUILDER WRAPPER                     #" 
     printf "\n\t #######################################################"
     printf "\n\n"
-
 }
+
+
+do_not_proceed_banner (){
+    printf "\n\t # "
+    printf "\n\t # Exiting ... "
+    printf "\n\t #######################################################"
+    printf "\n\t #                PBUILDER WRAPPER                     #" 
+    printf "\n\t #######################################################"
+    printf "\n\n"
+}
+
+
+pdebuild_error (){
+    printf "\n\t # "  
+    printf "\n\t #   BUILD FAILED ... "  
+    printf "\n\t #   Project Name : %s " "$PROJECT"
+    printf "\n\t #   Project Version : %s " "$VERSION"
+    printf "\n\t #   Debian Revision : %s " "$DEBREV"
+    printf "\n\t #   Debian Distro : %s " "$DISTRO"
+    printf "\n\t # "
+    printf "\n\t #   Please review the build log under the build result directory"
+    printf "\n\t #   Build Result : %s" "$BUILDRESULT"
+    printf "\n\t # "
+    printf "\n\t #######################################################"
+    printf "\n\t #                PBUILDER WRAPPER                     #"
+    printf "\n\t #######################################################"
+    printf "\n\n"
+
+    clean_up
+    exit 1
+}
+
 
 clean_up (){
-
     rm -rf $TEMPDIR
-
 }
+
 
 setup_workspace () {
 
@@ -169,6 +212,7 @@ setup_workspace () {
         printf "\n\t No debian folder found within your project root \n\n" 
         exit 1 
     fi
+
 
     # Grab some info by parsing the changelog file
     NAME=$(dpkg-parsechangelog | grep "Source" | tr -d ' ' | cut -d ":" -f 2)
@@ -217,13 +261,12 @@ setup_workspace () {
         printf "\n\t Unable to create $TEMPDIR/source directory \n"
         exit 1 
     fi 
-
 }
 
 
 check_gpg_keys (){
 
-    $GPG --list-keys | grep $RACKLABS_GPGKEY  > /dev/null
+    $GPG --list-keys | grep $GPGKEY  > /dev/null
     if [[ $? -ne 0 ]]; then 
         printf "\n\t GPG Public Key not found \n"
         rmdir $BUILDRESULT
@@ -231,7 +274,7 @@ check_gpg_keys (){
         exit 1
     fi 
 
-    $GPG --list-sigs | grep $RACKLABS_GPGKEY  > /dev/null
+    $GPG --list-sigs | grep $GPGKEY  > /dev/null
     if [[ $? -ne 0 ]]; then 
         printf "\n\t GPG Sig not found \n"
         rmdir $BUILDRESULT
@@ -239,7 +282,7 @@ check_gpg_keys (){
         exit 1
     fi 
 
-    $GPG -K | grep $RACKLABS_GPGKEY  > /dev/null
+    $GPG -K | grep $GPGKEY  > /dev/null
     if [[ $? -ne 0 ]]; then 
         printf "\n\t GPG Secrete Key not found \n"
         rmdir $BUILDRESULT
@@ -292,17 +335,38 @@ start_build  (){
 
     cd $NAME-$VERSION/
     echo -e "\n\t - Starting deb building step \n"
-    $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $RACKLABS_GPGKEY
+    $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY
+
+    if [[ $? -ne 0 ]]; then 
+        pdebuild_error
+    fi 
 
     cd ..
     find ./ -type f -iname "*.build" -exec cp -f {} $BUILDRESULT"/{}" \;
 
     printf "\n\t ---------------------- Ending build process ---------------------- \n"
 
+
+    printf "\n\t ---------------------- Starting Package signing ---------------------- \n"
+    sign_debs
+    printf "\n\t ---------------------- Ending Package signing ---------------------- \n"
+    
 }
 
 
-#sign_debs () { }
+sign_debs () { 
+    # Signing Packages with GPG KEY 
+    if [[ ! -z $GPGKEY_PROVIDED ]]; then 
+        GPGKEY="$GPGKEY_PROVIDED"
+    fi 
+
+    cd $BUILDRESULT
+    DEB_FILES=$(find . -name "*.deb" | sed 's/\.\///')
+    for i in "$DEB_FILES" 
+    do 
+      $DPKGSIG -k $GPGKEY --sign builder $i
+    done
+}
 
 
 #add_to_repo (){ }
@@ -311,8 +375,6 @@ start_build  (){
 ################## 
 # MAIN SECTION
 ##################
-
-
 
 setup_workspace
 
@@ -324,6 +386,9 @@ if [[ $choice = "y" ]]; then
     start_build
 else 
     rmdir $BUILDRESULT
+    do_not_proceed_banner
+    clean_up
+    exit 0
 fi 
 
 end_banner
