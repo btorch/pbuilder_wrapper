@@ -16,7 +16,6 @@
 ##############################
 # Change the variables below as you see fit
 #
-ADD_TO_REPO=0
 PBUILDERRC_FIND=1
 
 PDEBUILD="/usr/bin/pdebuild"
@@ -31,9 +30,10 @@ GPGKEY="2E2AB11B"
 PBUILDERRC_LOCATION="/etc/pbuilder/"
 BUILD_RESULT_BASE="/var/cache/pbuilder/result"
 
-# REPO BASES
-REPREPRO_BASEDIR_UNSTABLE="/srv/packages/ubuntu-unstable"
-REPREPRO_BASEDIR_STABLE="/srv/packages/ubuntu"
+# REPO BASE
+# This is the location where the repos have been created
+# Please change it according to your setup  
+REPREPRO_BASEDIR="/srv/packages"
 
 
 
@@ -41,7 +41,6 @@ REPREPRO_BASEDIR_STABLE="/srv/packages/ubuntu"
 #NUMBER_OF_ARGS=$#
 #ARG_SARRAY=("$@")
 #ARGS=$@
-
 
 
 
@@ -55,8 +54,8 @@ cat << USAGE
 
 Syntax
     pbuilder_wrapper.sh  -d PROJECT [-c CONFIG FILE LOCATION] [-r REPO NAME]
-    -r  Name of the repo for reprepro to add the package(s) into (
-        If none supplied than nothing is added [NOT YET IMPLEMENTED]
+    -r  Name of the repo for reprepro to add the package(s) into (ubuntu | ubuntu-unstable)
+        If none supplied than nothing is added 
     -c  Location of the pbuilder configuration file (if none provided it will try to find one under /etc/pbuilder/)
     -d  Name of the directory where the source (aka. your project) is located. (A debian folder must exist within it)
     -s  Sign the debian packages with the GPG key id provided 
@@ -66,20 +65,20 @@ Syntax
     Info: 
         Your PROJECT must be located within the directory you are calling the script from 
         e.g: /home/myname/myproject 
-             Then I will run the script from  /home/myname as "pbuilder_wrapper.sh -d myproject -c ConfigFile
+             Then I will run the script from  /home/myname as "pbuilder_wrapper.sh -d myproject -c ConfigFile"
              Please also note that a "debian" directory with the proper debain packaging configs must exist
+             You can also specify the -r flag for adding the packages to a repo if you have one setup 
 
 USAGE
 exit 1
 }
 
 
-while getopts "hrsc:d:" opts
+while getopts "hsr:c:d:" opts
 do 
     case $opts in 
         r) 
             REPO_NAME="${OPTARG}"
-            ADD_TO_REPO=1
             ;;
         c)
             PBUILDERRC="${OPTARG}"
@@ -350,6 +349,14 @@ start_build  (){
     printf "\n\t ---------------------- Starting Package signing ---------------------- \n"
     sign_debs
     printf "\n\t ---------------------- Ending Package signing ---------------------- \n"
+
+
+    if [[ ! -z $REPO_NAME ]]; then 
+        check_repo $REPO_NAME
+        printf "\n\t ---------------------- Adding Package(s) to repo ($REPO_NAME) ---------------------- \n"
+        add_to_repo
+        printf "\n\t ---------------------- Package(s) added to repo ($REPO_NAME) ---------------------- \n"
+    fi 
     
 }
 
@@ -369,7 +376,34 @@ sign_debs () {
 }
 
 
-#add_to_repo (){ }
+check_repo (){
+    # Check that the location of the repo actually exists first
+    NAME=$1
+    BASEDIR=$REPREPRO_BASEDIR"/"$NAME
+    if [[ ! -e $BASEDIR ]]; then 
+        printf "\n\t # Location for the repo could not be found "
+        printf "\n\t # Please check that $BASEDIR exists "
+        do_not_proceed_banner
+        clean_up
+        exit 1
+    fi 
+}
+
+
+add_to_repo (){ 
+    # Removes old packages to avoid hash mismatches and then add package to the repo
+    # The user must have sudo privileges or the group r/w access to the repo
+
+    cd $BUILDRESULT
+    BASEDIR=$REPREPRO_BASEDIR"/"$NAME 
+    DEB_FILES=$(find . -name "*.deb" | sed 's/\.\///')
+    for x in "$DEB_FILES" 
+    do 
+        PKGNAME=`printf "%s" "$x" | cut -d "_" -f 1`
+        sudo $REPREPRO -V --basedir $BASEDIR remove $DISTRO $PKGNAME
+        sudo $REPREPRO -V --basedir $BASEDIR includedeb $DISTRO $x
+    done
+}
 
 
 ################## 
@@ -392,5 +426,8 @@ else
 fi 
 
 end_banner
-
 clean_up
+
+exit 0 
+
+
