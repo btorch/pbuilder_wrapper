@@ -26,6 +26,7 @@ GIT="/usr/bin/git"
 GPG="/usr/bin/gpg"
 # Please change this to be your PGP key id 
 GPGKEY="2E2AB11B"
+REPO_DOMAIN="packages.racklabs.com"
 
 PBUILDERRC_LOCATION="/etc/pbuilder/"
 BUILD_RESULT_BASE="/var/cache/pbuilder/result"
@@ -53,28 +54,43 @@ usage_display (){
 cat << USAGE
 
 Syntax
-    pbuilder_wrapper.sh  -d PROJECT [-c CONFIG FILE LOCATION] [-r REPO NAME]
+    pbuilder_wrapper.sh  [-f] [-g GIT_URL] [-c CONFIG_FILE] [-r REPO_NAME]
     -r  Name of the repo for reprepro to add the package(s) into (ubuntu | ubuntu-unstable)
         If none supplied than nothing is added 
+
     -c  Location of the pbuilder configuration file (if none provided it will try to find one under /etc/pbuilder/)
-    -d  Name of the directory where the source (aka. your project) is located. (A debian folder must exist within it)
+
+    -g  Git repo URL where the source is located. If there is no debian within the source repo then provide 
+        the primary repo + the repo where the debian contents should be cloned from.
+        e.g: -g git://github.com/btorch/myproject.git,git://github.com/btorch/myproject_debian.git
+
     -s  Sign the debian packages with the GPG key id provided 
         If this flag is omitted it will try to sign the packages with the key assigned to the PGPKEY Variable
+
+    -f  Skip asking to proceed with the building and just go for it
+
     -h  For this usage screen  
 
-    Info: 
-        Your PROJECT must be located within the directory you are calling the script from 
-        e.g: /home/myname/myproject 
-             Then I will run the script from  /home/myname as "pbuilder_wrapper.sh -d myproject -c ConfigFile"
-             Please also note that a "debian" directory with the proper debain packaging configs must exist
-             You can also specify the -r flag for adding the packages to a repo if you have one setup 
+    Info:
+        if you are using the "-g" flag and providing the git repo(s), then you can run the script over SSH without
+        having to login to the box. If the flag is not provided then you would run the script from the pbuilder system 
+        as shown below: 
+
+        $ cd /home/myname/myproject 
+        $ pbuilder_wrapper.sh -f -r RepoName -c ConfigFile"
+
+        Over SSH 
+        $ ssh user@pbuilder.dom.com 'pbuilder_wrapper.sh -f -g "GIT_URL"  -r REPO_NAME -c CONFIG_FILE'
+
+        Please also note that a "debian" directory with the proper debain packaging configs must exist
+        You can also specify the -r flag for adding the packages to a repo if you have one setup 
 
 USAGE
 exit 1
 }
 
 
-while getopts "hsr:c:d:" opts
+while getopts "hsfr:c:g:" opts
 do 
     case $opts in 
         r) 
@@ -84,11 +100,21 @@ do
             PBUILDERRC="${OPTARG}"
             PBUILDERRC_FIND=0
             ;;
-        d)
-            PROJECT="${OPTARG}"
+        g)
+            URL="${OPTARG}"
+            CK=","
+            if [[ $URL =~ $CK ]]; then 
+                GIT_URL=`echo $URL | cut -d "," -f 1`
+                GIT_URL2=`echo $URL | cut -d "," -f 2`
+            else 
+                GIT_URL="$URL"
+            fi 
             ;;
         s)
             GPGKEY_PROVIDED="${OPTARG}"
+            ;;
+        f)
+            SKIP_ASKING="true"
             ;;
        \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -131,6 +157,10 @@ start_banner (){
     printf "\n\t #   Build Result : %s" "$BUILDRESULT" 
     printf "\n\t #   Work Location : %s " "$TEMPDIR/source"
     printf "\n\t # "
+    if [[ ! -z "$GIT_URL" ]]; then  
+        printf "\n\t #   GIT URL : $GIT_URL "
+        printf "\n\t # "
+    fi 
     printf "\n\t # \n"
 
 }
@@ -148,6 +178,10 @@ end_banner (){
     printf "\n\t #   Build Config : %s " "$PBUILDERRC_FILE"
     printf "\n\t #   Build Result : %s" "$BUILDRESULT" 
     printf "\n\t #   Work Location : %s " "$TEMPDIR/source  (cleaned)"
+    printf "\n\t # "
+    if [[ ! -z "$REPO_NAME" ]]; then 
+        printf "$repo_msg"
+    fi 
     printf "\n\t # "
     printf "\n\t #######################################################"
     printf "\n\t #                PBUILDER WRAPPER                     #" 
@@ -196,19 +230,36 @@ setup_workspace () {
 
     USER=$(whoami)
     BUILD_ID=$(date +"%Y-%m-%d_%T")
-    WORKSPACE=$(pwd)
-   
-    if [[ ! -e $WORKSPACE/$PROJECT ]]; then 
-        printf "\n\t You must be on the wrong directory level"   
-        printf "\n\t Can't find $WORKSPACE/$PROJECT \n\n "  
-        exit 1  
-    else
-        cd $WORKSPACE/$PROJECT
+
+    # Create a temp location where the files will be moved to and worked on
+    TEMPDIR=$(mktemp -d)
+    mkdir -p $TEMPDIR/source 
+    if [[ $? -ne 0 ]]; then 
+        printf "\n\t Unable to create $TEMPDIR/source directory \n"
+        exit 1 
     fi 
 
 
-    if [[ ! -e debian ]]; then
-        printf "\n\t No debian folder found within your project root \n\n" 
+    # If a git url is provided than try to retrieve it 
+    if [[ ! -z $GIT_URL ]]; then 
+        cd $TEMPDIR/source
+        PROJECT=$(basename "$GIT_URL" | sed 's/.git//')
+        $GIT clone -q "$GIT_URL" $PROJECT
+        WORKSPACE="$TEMPDIR/source/$PROJECT"
+
+        if [[ ! -z $GIT_URL2 ]]; then 
+            cd $WORKSPACE
+            $GIT clone -q "$GIT_URL2" debian    
+        fi
+    else
+       WORKSPACE=$(pwd)
+       PROJECT=$(basename $WORKSPACE)
+    fi 
+ 
+    cd $WORKSPACE                
+    if [[ ! -e $WORKSPACE/debian ]]; then
+        printf "\n\t No debian folder found within your project root " 
+        printf "\n\t $WORKSPACE/debian Not Found \n\n" 
         exit 1 
     fi
 
@@ -218,8 +269,6 @@ setup_workspace () {
     VERSION=$(dpkg-parsechangelog | grep "Version" | tr -d ' ' | cut -d ":" -f 2 | cut -d '-' -f 1)
     DEBREV=$(dpkg-parsechangelog | grep "Version" | tr -d ' ' | cut -d ":" -f 2 | cut -d '-' -f 2)
     DISTRO=$(dpkg-parsechangelog | grep "Distribution" | tr -d ' ' |  cut -d ":" -f 2)
-
-    cd $WORKSPACE
 
 
     # Check on pdebuilder config file 
@@ -244,7 +293,6 @@ setup_workspace () {
 
 
     # Create the location where the build result will go too
-    # Should be /var/cache/pbuilder/result/USERNAME/BUILD_ID/PROJECT
     BUILDRESULT=$BUILD_RESULT_BASE"/"$USER"/"$PROJECT"/"$BUILD_ID
     mkdir -p $BUILDRESULT
     if [[ $? -ne 0 ]]; then 
@@ -252,14 +300,6 @@ setup_workspace () {
         exit 1 
     fi 
 
-
-    # Create a temp location where the files will be moved to and worked on
-    TEMPDIR=$(mktemp -d)
-    mkdir -p $TEMPDIR/source 
-    if [[ $? -ne 0 ]]; then 
-        printf "\n\t Unable to create $TEMPDIR/source directory \n"
-        exit 1 
-    fi 
 }
 
 
@@ -320,7 +360,9 @@ start_build  (){
     check_gpg_keys
 
     # Making a copy 
-    rsync -aq0c  $WORKSPACE/$PROJECT $TEMPDIR/source/    
+    if [[ -z "$GIT_URL" ]]; then 
+        rsync -aq0c  $WORKSPACE $TEMPDIR/source/    
+    fi 
 
     # Get into the temp location where the source is located 
     cd $TEMPDIR/source
@@ -334,7 +376,7 @@ start_build  (){
 
     cd $NAME-$VERSION/
     echo -e "\n\t - Starting deb building step \n"
-    $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY
+    $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY &> /dev/null
 
     if [[ $? -ne 0 ]]; then 
         pdebuild_error
@@ -400,9 +442,16 @@ add_to_repo (){
     for x in "$DEB_FILES" 
     do 
         PKGNAME=`printf "%s" "$x" | cut -d "_" -f 1`
-        sudo $REPREPRO -V --basedir $BASEDIR remove $DISTRO $PKGNAME
-        sudo $REPREPRO -V --basedir $BASEDIR includedeb $DISTRO $x
+        sudo $REPREPRO --basedir $BASEDIR remove $DISTRO $PKGNAME 2> /dev/null
+        sudo $REPREPRO --basedir $BASEDIR includedeb $DISTRO $x 2> /dev/null
     done
+
+    repo_msg="\n\t #   Packages added to repo: deb http://$REPO_DOMAIN/$REPO_NAME $DISTRO main " 
+    for x in ${DEB_FILES}
+    do 
+        repo_msg="${repo_msg}\n\t # \t $x "
+    done
+    
 }
 
 
@@ -414,15 +463,19 @@ setup_workspace
 
 start_banner
 
-printf "\n\t Should we proceed with the build "
-read -p " (y/n) ?  " choice
-if [[ $choice = "y" ]]; then 
+if [[ $SKIP_ASKING = "true" ]]; then 
     start_build
 else 
-    rmdir $BUILDRESULT
-    do_not_proceed_banner
-    clean_up
-    exit 0
+    printf "\n\t Should we proceed with the build "
+    read -p " (y/n) ?  " choice
+    if [[ $choice = "y" ]]; then 
+        start_build
+    else 
+        rmdir $BUILDRESULT
+        do_not_proceed_banner
+        clean_up
+        exit 0
+    fi 
 fi 
 
 end_banner
