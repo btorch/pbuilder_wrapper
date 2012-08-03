@@ -54,7 +54,7 @@ usage_display (){
 cat << USAGE
 
 Syntax
-    pbuilder_wrapper.sh  [-f] [-g GIT_URL] [-c CONFIG_FILE] [-r REPO_NAME]
+    pbuilder_wrapper.sh  [-v] [-f] [-g GIT_URL[,GIT_URL2]] -t [GIT TAG[,GIT TAG2]] [-c CONFIG_FILE] [-r REPO_NAME]
     -r  Name of the repo for reprepro to add the package(s) into (ubuntu | ubuntu-unstable)
         If none supplied than nothing is added 
 
@@ -95,7 +95,7 @@ exit 1
 }
 
 
-while getopts "hvsfr:c:g:" opts
+while getopts "hvsfr:c:g:t:" opts
 do 
     case $opts in 
         r) 

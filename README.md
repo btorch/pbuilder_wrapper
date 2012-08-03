@@ -12,7 +12,7 @@ Syntax
 
 
 Syntax
-    pbuilder_wrapper.sh  [-f] [-g GIT_URL] [-c CONFIG_FILE] [-r REPO_NAME]
+    pbuilder_wrapper.sh  [-v] [-f] [-g GIT_URL[,GIT_URL2]] -t [GIT TAG[,GIT TAG2]] [-c CONFIG_FILE] [-r REPO_NAME]
     -r  Name of the repo for reprepro to add the package(s) into (ubuntu | ubuntu-unstable)
         If none supplied than nothing is added 
 
@@ -47,6 +47,7 @@ Syntax
 
         Please also note that a "debian" directory with the proper debain packaging configs must exist
         You can also specify the -r flag for adding the packages to a repo if you have one setup 
+
 
 
 
