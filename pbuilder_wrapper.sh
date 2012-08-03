@@ -64,6 +64,9 @@ Syntax
         the primary repo + the repo where the debian contents should be cloned from.
         e.g: -g git://github.com/btorch/myproject.git,git://github.com/btorch/myproject_debian.git
 
+    -t  If you would like to provide a branch/tag number for the git repo. If you are giving two git repos
+        with the -g flag than you can do the same here, e.g: -t "tag1,tag2" 
+
     -s  Sign the debian packages with the GPG key id provided 
         If this flag is omitted it will try to sign the packages with the key assigned to the PGPKEY Variable
 
@@ -110,6 +113,16 @@ do
                 GIT_URL2=`echo $URL | cut -d "," -f 2`
             else 
                 GIT_URL="$URL"
+            fi 
+            ;;
+        t)
+            TAGS="${OPTARG}"
+            CK=","
+            if [[ $TAGS =~ $CK ]]; then 
+                TAG1=`echo $TAGS | cut -d "," -f 1`
+                TAG2=`echo $TAGS | cut -d "," -f 2`
+            else 
+                TAG1="$TAGS"
             fi 
             ;;
         s)
@@ -164,6 +177,9 @@ start_banner (){
     printf "\n\t # "
     if [[ ! -z "$GIT_URL" ]]; then  
         printf "\n\t #   GIT URL : $GIT_URL "
+        if [[ ! -z "$TAG1" ]]; then  
+            printf "\n\t #   GIT Tag : $TAG1 "
+        fi
         printf "\n\t # "
     fi 
     printf "\n\t # \n"
@@ -252,9 +268,20 @@ setup_workspace () {
         $GIT clone -q "$GIT_URL" $PROJECT
         WORKSPACE="$TEMPDIR/source/$PROJECT"
 
+        if [[ ! -z $TAG1 ]]; then 
+            cd $WORKSPACE
+            $GIT checkout -b $TAG1 $TAG1 
+            cd ..
+        fi 
+
         if [[ ! -z $GIT_URL2 ]]; then 
             cd $WORKSPACE
             $GIT clone -q "$GIT_URL2" debian    
+            if [[ ! -z $TAG2 ]]; then 
+                cd debian
+                $GIT checkout -b $TAG2 $TAG2 
+                cd ..
+            fi 
         fi
     else
        WORKSPACE=$(pwd)

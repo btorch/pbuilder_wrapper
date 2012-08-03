@@ -22,10 +22,15 @@ Syntax
         the primary repo + the repo where the debian contents should be cloned from.
         e.g: -g git://github.com/btorch/myproject.git,git://github.com/btorch/myproject_debian.git
 
+    -t  If you would like to provide a branch/tag number for the git repo. If you are giving two git repos
+        with the -g flag than you can do the same here, e.g: -t "tag1,tag2" 
+
     -s  Sign the debian packages with the GPG key id provided 
         If this flag is omitted it will try to sign the packages with the key assigned to the PGPKEY Variable
 
     -f  Skip asking to proceed with the building and just go for it
+
+    -v  For verbose mode duing package build 
 
     -h  For this usage screen  
 
