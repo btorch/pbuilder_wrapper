@@ -69,6 +69,8 @@ Syntax
 
     -f  Skip asking to proceed with the building and just go for it
 
+    -v  For verbose mode duing package build 
+
     -h  For this usage screen  
 
     Info:
@@ -90,7 +92,7 @@ exit 1
 }
 
 
-while getopts "hsfr:c:g:" opts
+while getopts "hvsfr:c:g:" opts
 do 
     case $opts in 
         r) 
@@ -115,6 +117,9 @@ do
             ;;
         f)
             SKIP_ASKING="true"
+            ;;
+        v)
+            VERBOSE="true"
             ;;
        \?)
             echo "Invalid option: -$OPTARG" >&2
@@ -368,7 +373,9 @@ start_build  (){
     cd $TEMPDIR/source
 
     # Change directory to follow debian naming scheme 
-    mv $PROJECT $NAME-$VERSION
+    if [[ ! $PROJECT = $NAME-$VERSION ]]; then 
+        mv $PROJECT $NAME-$VERSION
+    fi 
 
     # Creating debian original tarball without .git or debian files
     printf "\n\t - Creating original tarball : %s_%s.orig.tar.gz  " "$NAME" "$VERSION"
@@ -376,7 +383,11 @@ start_build  (){
 
     cd $NAME-$VERSION/
     echo -e "\n\t - Starting deb building step \n"
-    $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY &> /dev/null
+    if [[ ! -z $VERBOSE && $VERBOSE = "true" ]]; then 
+        $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY 
+    else
+        $PDEBUILD --configfile $PBUILDERRC_FILE --buildresult $BUILDRESULT --auto-debsign --debsign-k $GPGKEY &> /dev/null
+    fi 
 
     if [[ $? -ne 0 ]]; then 
         pdebuild_error
